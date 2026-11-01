@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>مجرّة الحروف</title>
+<meta name="theme-color" content="#04040a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lalezar&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap">
+<style>
+*{box-sizing:border-box}
+:root{
+  --ink:#e8e6f4;
+  --muted:#7f7d9c;
+  --glass:rgba(16,15,32,.55);
+  --line:rgba(200,200,255,.12);
+  --accent:#f1d9a6;
+  --accent-ink:#17122a;
+  --body:#04040a;
+  --f-ui:"IBM Plex Sans Arabic",system-ui,sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0}
+body{background:var(--body);color:var(--ink);font-family:var(--f-ui);overflow:hidden;direction:rtl;
+  -webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+.stage{position:fixed;inset:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#fg{touch-action:none;cursor:grab}
+#fg:active{cursor:grabbing}
+
+/* الشريط العلوي */
+.top{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding-top:calc(env(safe-area-inset-top,0px) + 14px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));pointer-events:none}
+.sig{display:flex;flex-direction:column;gap:2px;line-height:1.2}
+.sig b{font:600 14px var(--f-ui)}
+.sig span{font-size:11px;color:var(--muted);letter-spacing:.06em;direction:ltr;text-align:right}
+.seg{pointer-events:auto;display:flex;background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:3px;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.seg button{font:500 12.5px var(--f-ui);color:var(--muted);background:transparent;border:0;border-radius:999px;padding:6px 13px;cursor:pointer;transition:color .3s,background .3s}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+
+/* التلميح */
+.hint{position:fixed;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 74px);text-align:center;pointer-events:none;
+  font-size:13px;color:var(--muted);transition:opacity .8s,transform .8s;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.hint kbd{font:inherit;color:var(--ink);border-bottom:1px dashed var(--line)}
+.hint.gone{opacity:0;transform:translateY(-6px)}
+
+/* أدوات الأسفل */
+.dock{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;
+  padding-bottom:calc(env(safe-area-inset-bottom,0px) + 16px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));pointer-events:none}
+.field{pointer-events:auto;width:100%;max-width:440px;display:flex;align-items:center;background:var(--glass);border:1px solid var(--line);border-radius:14px;
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:border-color .3s}
+.field:focus-within{border-color:var(--accent)}
+.field input{flex:1;min-width:0;font:500 16px var(--f-ui);color:var(--ink);background:transparent;border:0;outline:none;padding:13px 16px;user-select:text;-webkit-user-select:text}
+.field input::placeholder{color:var(--muted)}
+.count{font:500 11px var(--f-ui);color:var(--muted);padding-inline-end:6px;font-variant-numeric:tabular-nums;direction:ltr}
+.go{margin:5px;font:600 13px var(--f-ui);border:0;border-radius:10px;padding:9px 14px;background:var(--accent);color:var(--accent-ink);cursor:pointer;transition:transform .15s;min-width:64px}
+.go:active{transform:scale(.94)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){ .hint{transition:none} }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <canvas id="bg"></canvas>
+  <canvas id="fg" aria-label="اسم مكوّن من نجوم بشكل ثلاثي الأبعاد يتحول لمجرة"></canvas>
+</div>
+
+<header class="top">
+  <div class="sig"><b>عبدالله</b><span>STARS · TYPE / 02</span></div>
+  <div class="seg" role="group" aria-label="الشكل">
+    <button id="vName" aria-pressed="true">اسم</button>
+    <button id="vGal" aria-pressed="false">مجرّة</button>
+  </div>
+</header>
+
+<p class="hint" id="hint">اسحب عشان تدوّره · <kbd>اضغط مرتين</kbd> وشوفه ينفجر</p>
+
+<div class="dock">
+  <form class="field" id="f">
+    <input id="word" maxlength="12" placeholder="اكتب كلمة وخلّ النجوم ترسمها…" autocomplete="off" enterkeyhint="done">
+    <span class="count" id="count">0/12</span>
+    <button class="go" type="button" id="go">انفجار</button>
+  </form>
+</div>
+
+<script>
+(() => {
+  // الإعدادات
+  const FONT = '"Lalezar","Amiri",serif';
+  const COLORS = [
+    [255,236,200], [255,214,150], [255,250,240], // قلب المجرة: دافي
+    [190,205,255], [160,170,255], [215,170,255], [255,170,210] // الأذرع: بارد
+  ];
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const TAU = Math.PI * 2;
+  const N = 6500;
+
+  const fg = document.getElementById('fg'), c = fg.getContext('2d');
+  const bg = document.getElementById('bg');
+  let W = 0, H = 0, dpr = 1, F = 600, cx = 0, cy = 0, word = 'عبدالله';
+
+  // بيانات النجوم
+  const tx = new Float32Array(N), ty = new Float32Array(N), tz = new Float32Array(N); // مكانها في الاسم
+  const gr = new Float32Array(N), ga = new Float32Array(N), gy = new Float32Array(N); // مكانها في المجرة
+  const bx = new Float32Array(N), by = new Float32Array(N), bz = new Float32Array(N); // اتجاه الانفجار
+  const dl = new Float32Array(N), sz = new Float32Array(N), tw = new Float32Array(N), ci = new Uint8Array(N), glow = new Uint8Array(N);
+  const buckets = COLORS.map(() => []);
+  let sprites = [];
+
+  let M = 1, target = 0, t = 0; // M = 0 اسم، 1 مجرة
+  const cam = { ry:0, rx:0, vy:0, vx:0, drag:false, idle:0 };
+  const TILT = .62, ct = Math.cos(TILT), st = Math.sin(TILT);
+
+  const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+
+  function paintBg(){
+    bg.width = W*dpr; bg.height = H*dpr;
+    const b = bg.getContext('2d'); b.setTransform(dpr,0,0,dpr,0,0);
+    const g = b.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#03030a'); g.addColorStop(1,'#0a0819');
+    b.fillStyle = g; b.fillRect(0,0,W,H);
+    const neb = (x, y, r, col) => { const n = b.createRadialGradient(x,y,0,x,y,r); n.addColorStop(0,col); n.addColorStop(1,'rgba(0,0,0,0)'); b.fillStyle = n; b.fillRect(0,0,W,H); };
+    neb(W*.15, H*.25, W*.7, 'rgba(90,60,160,.16)');
+    neb(W*.9, H*.7, W*.8, 'rgba(40,70,150,.14)');
+    neb(W*.6, H*.45, W*.5, 'rgba(160,80,140,.07)');
+    let s = 3; const r = () => (s = (s*16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < W*H/1500; i++){
+      b.globalAlpha = .1 + r()*.5; b.fillStyle = r() < .2 ? '#cfd6ff' : '#ffffff';
+      const z = r() < .05 ? 1.6 : 1; b.fillRect(r()*W, r()*H, z, z);
+    }
+    b.globalAlpha = 1;
+  }
+
+  function makeSprites(){
+    sprites = COLORS.map(([r,g,b]) => {
+      const s = document.createElement('canvas'), n = 32; s.width = s.height = n;
+      const x = s.getContext('2d'), gr = x.createRadialGradient(n/2,n/2,0,n/2,n/2,n/2);
+      gr.addColorStop(0,`rgba(${r},${g},${b},1)`); gr.addColorStop(.25,`rgba(${r},${g},${b},.35)`); gr.addColorStop(1,`rgba(${r},${g},${b},0)`);
+      x.fillStyle = gr; x.fillRect(0,0,n,n); return s;
+    });
+  }
+
+  // تحويل النص لنقاط ثلاثية الأبعاد
+  function sampleWord(text){
+    const o = document.createElement('canvas'); o.width = W; o.height = H;
+    const x = o.getContext('2d', { willReadFrequently:true });
+    let size = Math.min(H*.26, 220);
+    x.font = `400 ${size}px ${FONT}`;
+    const m = x.measureText(text).width;
+    if (m > W*.84){ size *= (W*.84)/m; x.font = `400 ${size}px ${FONT}`; }
+    x.direction = 'rtl'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillStyle = '#fff'; x.fillText(text, W/2, H/2);
+    const d = x.getImageData(0,0,W,H).data, pts = [];
+    for (let yy = 0; yy < H; yy += 2) for (let xx = 0; xx < W; xx += 2)
+      if (d[(yy*W + xx)*4 + 3] > 140) pts.push(xx - W/2, yy - H/2);
+    const count = pts.length/2, depth = size*.12;
+    for (let i = 0; i < N; i++){
+      const j = (Math.random()*count | 0)*2;
+      tx[i] = pts[j] + (Math.random() - .5)*2;
+      ty[i] = pts[j+1] + (Math.random() - .5)*2;
+      tz[i] = (Math.random() - .5)*2*depth;
+      const len = Math.hypot(tx[i], ty[i], tz[i]) || 1, kick = 60 + Math.random()*160;
+      bx[i] = tx[i]/len*kick; by[i] = ty[i]/len*kick; bz[i] = (Math.random() - .5)*kick*2;
+    }
+  }
+
+  function buildGalaxy(){
+    const R = Math.min(W, H)*.62;
+    buckets.forEach(b => b.length = 0);
+    for (let i = 0; i < N; i++){
+      const core = Math.random() < .22;
+      let r, a;
+      if (core){ r = Math.abs(gauss())*R*.18; a = Math.random()*TAU; }
+      else {
+        r = R*(.08 + .92*Math.pow(Math.random(), .8));
+        const arm = (Math.random()*3 | 0);
+        a = arm*TAU/3 + r/R*4.2 + gauss()*.55*(1 - r/R*.4);
+        r *= 1 + gauss()*.08;
+      }
+      gr[i] = r; ga[i] = a; gy[i] = gauss()*(core ? 14 : 6 + 10*(1 - r/R));
+      const f = r/R;
+      ci[i] = f < .18 ? (Math.random()*3 | 0) : f < .35 && Math.random() < .5 ? 1 : 3 + (Math.random()*4 | 0);
+      buckets[ci[i]].push(i);
+      sz[i] = .7 + Math.random()*1.3 + (core ? .4 : 0);
+      tw[i] = Math.random()*TAU;
+      glow[i] = Math.random() < (core ? .12 : .05) ? 1 : 0;
+      dl[i] = Math.random()*.45;
+    }
+  }
+
+  function build(){
+    W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+    fg.width = W*dpr; fg.height = H*dpr; c.setTransform(dpr,0,0,dpr,0,0);
+    F = Math.max(W, H)*1.1; cx = W/2; cy = H*.44;
+    paintBg(); makeSprites(); buildGalaxy(); sampleWord(word);
+  }
+
+  // الأحداث
+  const hint = document.getElementById('hint'), goBtn = document.getElementById('go');
+  let hideHint = () => { hint.classList.add('gone'); hideHint = () => {}; };
+  const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch(e){} };
+  function setView(v){
+    target = v;
+    document.getElementById('vName').setAttribute('aria-pressed', v === 0);
+    document.getElementById('vGal').setAttribute('aria-pressed', v === 1);
+    goBtn.textContent = v === 0 ? 'انفجار' : 'تجمّع';
+    buzz(14);
+  }
+  document.getElementById('vName').onclick = () => { hideHint(); setView(0); };
+  document.getElementById('vGal').onclick = () => { hideHint(); setView(1); };
+  goBtn.onclick = () => { hideHint(); setView(target ? 0 : 1); };
+
+  // السحب للتدوير
+  let lx = 0, ly = 0, lastTap = 0;
+  fg.addEventListener('pointerdown', e => {
+    hideHint(); cam.drag = true; lx = e.clientX; ly = e.clientY; cam.vx = cam.vy = 0; fg.setPointerCapture(e.pointerId);
+    const now = performance.now();
+    if (now - lastTap < 300){ setView(target ? 0 : 1); lastTap = 0; } else lastTap = now;
+  });
+  fg.addEventListener('pointermove', e => {
+    if (!cam.drag) return;
+    const dx = e.clientX - lx, dy = e.clientY - ly; lx = e.clientX; ly = e.clientY;
+    cam.vy = dx*.0085; cam.vx = dy*.0065; cam.ry += cam.vy; cam.rx += cam.vx; cam.idle = 0;
+  });
+  const up = () => { cam.drag = false; };
+  fg.addEventListener('pointerup', up); fg.addEventListener('pointercancel', up);
+
+  const inp = document.getElementById('word'), count = document.getElementById('count');
+  let typeT;
+  inp.addEventListener('input', () => {
+    count.textContent = inp.value.length + '/12';
+    clearTimeout(typeT);
+    typeT = setTimeout(() => {
+      const v = inp.value.trim();
+      if (v && v !== word){ word = v; hideHint(); sampleWord(word); if (target === 1) setView(0); else { M = Math.max(M, .35); } }
+    }, 600);
+  });
+  document.getElementById('f').addEventListener('submit', e => { e.preventDefault(); inp.blur(); });
+
+  // الرسم كل فريم
+  const ease = x => x < .5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3)/2;
+  function frame(){
+    t += 1/60;
+    const speed = reduce ? 1 : .016;
+    M += Math.sign(target - M) * Math.min(Math.abs(target - M), speed);
+
+    // الكاميرا: قصور ذاتي، وترجع تتمايل لحالها
+    if (!cam.drag){
+      cam.ry += cam.vy; cam.rx += cam.vx; cam.vy *= .95; cam.vx *= .95; cam.idle++;
+      if (cam.idle > 90 && !reduce){
+        cam.ry += (Math.sin(t*.35)*.45 - cam.ry)*.01;
+        cam.rx += (Math.sin(t*.27)*.12 - cam.rx)*.01;
+      }
+    }
+    cam.rx = Math.max(-1.3, Math.min(1.3, cam.rx));
+    const cy_ = Math.cos(cam.ry), sy_ = Math.sin(cam.ry), cx_ = Math.cos(cam.rx), sx_ = Math.sin(cam.rx);
+
+    c.globalCompositeOperation = 'destination-out';
+    c.fillStyle = 'rgba(0,0,0,.38)'; c.fillRect(0,0,W,H);
+    c.globalCompositeOperation = 'lighter';
+
+    const spin = t*.09;
+    for (let b = 0; b < buckets.length; b++){
+      const list = buckets[b], col = COLORS[b], spr = sprites[b];
+      c.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+      for (let k = 0; k < list.length; k++){
+        const i = list[k];
+        // تقدّم كل نجمة بتأخير بسيط عشان الانتقال يطلع متموّج
+        const e = ease(Math.max(0, Math.min(1, (M - dl[i]*(target ? 1 : .6)) / (1 - .45))));
+        // المجرة: الأقرب للمركز يدور أسرع
+        const a = ga[i] + spin/(.25 + gr[i]/(Math.min(W,H)*.62));
+        const gx0 = Math.cos(a)*gr[i], gz0 = Math.sin(a)*gr[i];
+        const gxx = gx0, gyy = gy[i]*ct - gz0*st, gzz = gy[i]*st + gz0*ct;
+        const burst = Math.sin(Math.PI*e);
+        let x = tx[i] + (gxx - tx[i])*e + bx[i]*burst;
+        let y = ty[i] + (gyy - ty[i])*e + by[i]*burst;
+        let z = tz[i] + (gzz - tz[i])*e + bz[i]*burst;
+        // حركة خفيفة للنجوم وهي في الاسم
+        if (e < 1){ const w = (1 - e)*1.2; x += Math.sin(t*1.3 + tw[i]*3)*w; y += Math.cos(t*1.1 + tw[i]*5)*w; }
+        // التدوير والإسقاط
+        const x1 = x*cy_ - z*sy_, z1 = x*sy_ + z*cy_;
+        const y1 = y*cx_ - z1*sx_, z2 = y*sx_ + z1*cx_;
+        const s = F/(F + z2);
+        if (s <= 0) continue;
+        const X = cx + x1*s, Y = cy + y1*s;
+        if (X < -20 || X > W + 20 || Y < -20 || Y > H + 20) continue;
+        const twk = .65 + .35*Math.sin(t*2.2 + tw[i]*7);
+        c.globalAlpha = Math.min(1, (.32 + .45*e)*twk*s*s);
+        const p = sz[i]*s;
+        c.fillRect(X - p/2, Y - p/2, p, p);
+        if (glow[i]){ const gS = p*7; c.globalAlpha *= .55; c.drawImage(spr, X - gS/2, Y - gS/2, gS, gS); }
+      }
+    }
+    c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+    requestAnimationFrame(frame);
+  }
+
+  let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(build, 200); });
+
+  // ننتظر الخط، بعدين تبدأ مجرة وتتجمع على الاسم
+  let started = false;
+  const start = () => {
+    if (started) return; started = true; build(); requestAnimationFrame(frame);
+    setTimeout(() => setView(0), reduce ? 0 : 1400);
+  };
+  const waitFont = () => (document.fonts ? document.fonts.load('400 100px "Lalezar"', 'عبدالله').catch(() => {}) : Promise.resolve()).then(start, start);
+  if (document.readyState === 'complete') waitFont(); else addEventListener('load', waitFont);
+  setTimeout(start, 2500);
+})();
+</script>
+</body>
+</html>
